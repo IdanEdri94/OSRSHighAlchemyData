@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>F2P Profitable High Alchemy Tracker</title>
+  <style>
+    body { 
+      font-family: Arial, sans-serif; 
+      background: linear-gradient(135deg, #2c1810 0%, #4a3429 50%, #2c1810 100%);
+      color: #d4af37;
+      margin: 0;
+      padding: 20px;
+    }
+    
+    h2 {
+      color: #ffd700;
+      text-align: center;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+      font-size: 2em;
+      margin-bottom: 20px;
+    }
+    
+    .controls {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    
+    .toggle-btn {
+      background: linear-gradient(135deg, #654321 0%, #8b4513 50%, #654321 100%);
+      color: #ffd700;
+      border: 2px solid #8b4513;
+      padding: 10px 20px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: bold;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+      transition: all 0.3s ease;
+    }
+    
+    .toggle-btn:hover {
+      background: linear-gradient(135deg, #8b4513 0%, #a0522d 50%, #8b4513 100%);
+      border-color: #d4af37;
+      box-shadow: 0 0 10px rgba(212, 175, 55, 0.5);
+    }
+    
+    table { 
+      border-collapse: collapse; 
+      width: auto; 
+      margin: 20px auto 0; 
+      background: rgba(139, 69, 19, 0.1);
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+    
+    th, td { 
+      border: 1px solid #5a4037; 
+      padding: 8px; 
+      text-align: center; 
+    }
+    
+    th { 
+      background: linear-gradient(135deg, #654321 0%, #8b4513 50%, #654321 100%);
+      color: #ffd700;
+      font-weight: bold;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+    }
+    
+    td {
+      background: rgba(205, 133, 63, 0.1);
+      color: #e6d3a3;
+    }
+    
+    tr:nth-child(even) td {
+      background: rgba(139, 69, 19, 0.15);
+    }
+    
+    tr:hover td {
+      background: rgba(212, 175, 55, 0.2);
+      color: #ffd700;
+    }
+    
+    .profit { 
+      color: #32cd32;
+      font-weight: bold;
+    }
+    
+    .total-profit {
+      color: #00ff00;
+      font-weight: bold;
+      text-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+    }
+    
+    .item-cell {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      justify-content: flex-start;
+      text-align: left;
+      width: 200px;
+    }
+    
+    .item-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      border: 1px solid #8b4513;
+      flex-shrink: 0;
+    }
+    
+    .avg-column {
+      transition: opacity 0.3s ease;
+    }
+    
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <h2>F2P Profitable High Alchemy Tracker (Live Data)</h2>
+  
+  <div class="controls">
+    <button class="toggle-btn" onclick="toggleAvgColumns()">Hide 6h Average Columns</button>
+  </div>
+  
+  <table id="alchemyTable">
+    <thead>
+      <tr>
+        <th>Item</th>
+        <th>GE Price</th>
+        <th class="avg-column">6h Avg Price</th>
+        <th>Nature Rune Cost</th>
+        <th>High Alch Return</th>
+        <th>GE Limit</th>
+        <th>Volume (Buy/Sell)</th>
+        <th>Profit</th>
+        <th>Total Profit (Current)</th>
+        <th class="avg-column">6h Avg Profit</th>
+        <th class="avg-column">Total Profit (6h Avg)</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+  <script>
+    const natureRuneCost = 100; // adjust to current nature rune price
+    let avgColumnsVisible = true;
+    
+    // Item image mapping
+    const itemImages = {
+      "Rune kiteshield": "https://oldschool.runescape.wiki/images/Rune_kiteshield.png",
+      "Rune pickaxe": "https://oldschool.runescape.wiki/images/Rune_pickaxe.png",
+      "Rune platebody": "https://oldschool.runescape.wiki/images/Rune_platebody.png",
+      "Rune platelegs": "https://oldschool.runescape.wiki/images/Rune_platelegs.png",
+      "Adamant platebody": "https://oldschool.runescape.wiki/images/Adamant_platebody.png",
+      "Adamant axe": "https://oldschool.runescape.wiki/images/Adamant_axe.png",
+      "Rune full helm": "https://oldschool.runescape.wiki/images/Rune_full_helm.png",
+      "Adamant shield (h4)": "https://oldschool.runescape.wiki/images/Adamant_shield_(h4).png",
+      "Rune longsword": "https://oldschool.runescape.wiki/images/Rune_longsword.png",
+      "Rune warhammer": "https://oldschool.runescape.wiki/images/Rune_warhammer.png",
+      "Rune chainbody": "https://oldschool.runescape.wiki/images/Rune_chainbody.png",
+      "Adamant platelegs": "https://oldschool.runescape.wiki/images/Adamant_platelegs.png",
+      "Rune plateskirt": "https://oldschool.runescape.wiki/images/Rune_plateskirt.png",
+      "Rune dagger": "https://oldschool.runescape.wiki/images/Rune_dagger.png",
+      "Adamant shield (h3)": "https://oldschool.runescape.wiki/images/Adamant_shield_(h3).png",
+      "Rune mace": "https://oldschool.runescape.wiki/images/Rune_mace.png",
+      "Rune 2h sword": "https://oldschool.runescape.wiki/images/Rune_2h_sword.png",
+      "Rune battleaxe": "https://oldschool.runescape.wiki/images/Rune_battleaxe.png",
+      "Green d'hide body": "https://oldschool.runescape.wiki/images/Green_d%27hide_body.png",
+      "Mithril pickaxe": "https://oldschool.runescape.wiki/images/Mithril_pickaxe.png",
+      "Adamant full helm": "https://oldschool.runescape.wiki/images/Adamant_full_helm.png",
+      "Adamant kiteshield": "https://oldschool.runescape.wiki/images/Adamant_kiteshield.png",
+      "Adamant shield (h2)": "https://oldschool.runescape.wiki/images/Adamant_shield_(h2).png",
+      "Mithril plateskirt": "https://oldschool.runescape.wiki/images/Mithril_plateskirt.png",
+      "Mithril platebody": "https://oldschool.runescape.wiki/images/Mithril_platebody.png",
+      "Rune scimitar": "https://oldschool.runescape.wiki/images/Rune_scimitar.png",
+      "Adamant chainbody": "https://oldschool.runescape.wiki/images/Adamant_chainbody.png",
+      "Adamant med helm": "https://oldschool.runescape.wiki/images/Adamant_med_helm.png",
+      "Black 2h sword": "https://oldschool.runescape.wiki/images/Black_2h_sword.png",
+      "Black battleaxe": "https://oldschool.runescape.wiki/images/Black_battleaxe.png",
+      "Steel platebody": "https://oldschool.runescape.wiki/images/Steel_platebody.png",
+      "Iron platebody": "https://oldschool.runescape.wiki/images/Iron_platebody.png",
+      "Steel 2h sword": "https://oldschool.runescape.wiki/images/Steel_2h_sword.png",
+      "Adamant pickaxe": "https://oldschool.runescape.wiki/images/Adamant_pickaxe.png",
+      "Adamant battleaxe": "https://oldschool.runescape.wiki/images/Adamant_battleaxe.png",
+      "Black longsword": "https://oldschool.runescape.wiki/images/Black_longsword.png",
+      "Adamant dagger": "https://oldschool.runescape.wiki/images/Adamant_dagger.png",
+      "Black sq shield": "https://oldschool.runescape.wiki/images/Black_sq_shield.png",
+      "Rune med helm": "https://oldschool.runescape.wiki/images/Rune_med_helm.png",
+      "Rune helm (h3)": "https://oldschool.runescape.wiki/images/Rune_helm_(h3).png",
+      "Mithril sq shield": "https://oldschool.runescape.wiki/images/Mithril_sq_shield.png",
+      "Mithril med helm": "https://oldschool.runescape.wiki/images/Mithril_med_helm.png",
+      "Green d'hide chaps": "https://oldschool.runescape.wiki/images/Green_d%27hide_chaps.png",
+      "Mithril platelegs": "https://oldschool.runescape.wiki/images/Mithril_platelegs.png",
+      "Mithril sword": "https://oldschool.runescape.wiki/images/Mithril_sword.png",
+      "Mithril mace": "https://oldschool.runescape.wiki/images/Mithril_mace.png",
+      "Emerald amulet (u)": "https://oldschool.runescape.wiki/images/Emerald_amulet_(u).png",
+      "Steel battleaxe": "https://oldschool.runescape.wiki/images/Steel_battleaxe.png",
+      "Emerald amulet": "https://oldschool.runescape.wiki/images/Emerald_amulet.png",
+      "Mithril axe": "https://oldschool.runescape.wiki/images/Mithril_axe.png",
+      "Black warhammer": "https://oldschool.runescape.wiki/images/Black_warhammer.png",
+      "Castle wars bracelet(3)": "https://oldschool.runescape.wiki/images/Castle_wars_bracelet(3).png",
+      "Black kiteshield": "https://oldschool.runescape.wiki/images/Black_kiteshield.png",
+      "Mithril kiteshield": "https://oldschool.runescape.wiki/images/Mithril_kiteshield.png",
+      "Rune shield (h5)": "https://oldschool.runescape.wiki/images/Rune_shield_(h5).png",
+      "Mithril scimitar": "https://oldschool.runescape.wiki/images/Mithril_scimitar.png",
+      "Amulet of strength": "https://oldschool.runescape.wiki/images/Amulet_of_strength.png",
+      "Emerald necklace": "https://oldschool.runescape.wiki/images/Emerald_necklace.png",
+      "Ruby ring": "https://oldschool.runescape.wiki/images/Ruby_ring.png",
+      "Mithril 2h sword": "https://oldschool.runescape.wiki/images/Mithril_2h_sword.png",
+      "Mithril chainbody": "https://oldschool.runescape.wiki/images/Mithril_chainbody.png",
+      "Ring of forging": "https://oldschool.runescape.wiki/images/Ring_of_forging.png",
+      "Steel longsword": "https://oldschool.runescape.wiki/images/Steel_longsword.png",
+      "Diamond necklace": "https://oldschool.runescape.wiki/images/Diamond_necklace.png",
+      "Mithril longsword": "https://oldschool.runescape.wiki/images/Mithril_longsword.png",
+      "Diamond ring": "https://oldschool.runescape.wiki/images/Diamond_ring.png",
+      "Diamond amulet (u)": "https://oldschool.runescape.wiki/images/Diamond_amulet_(u).png",
+      "Studded body": "https://oldschool.runescape.wiki/images/Studded_body.png",
+      "Sapphire necklace": "https://oldschool.runescape.wiki/images/Sapphire_necklace.png",
+      "Adamant 2h sword": "https://oldschool.runescape.wiki/images/Adamant_2h_sword.png",
+      "Ruby necklace": "https://oldschool.runescape.wiki/images/Ruby_necklace.png",
+      "Maple longbow": "https://oldschool.runescape.wiki/images/Maple_longbow.png",
+      "Steel med helm": "https://oldschool.runescape.wiki/images/Steel_med_helm.png",
+      "Sapphire amulet": "https://oldschool.runescape.wiki/images/Sapphire_amulet.png",
+      "Sapphire amulet (u)": "https://oldschool.runescape.wiki/images/Sapphire_amulet_(u).png",
+      "Amulet of magic": "https://oldschool.runescape.wiki/images/Amulet_of_magic.png",
+      "Willow longbow": "https://oldschool.runescape.wiki/images/Willow_longbow.png",
+      "Adamant shield (h1)": "https://oldschool.runescape.wiki/images/Adamant_shield_%28h1%29.png",
+      "Rune axe": "https://oldschool.runescape.wiki/images/Rune_axe.png",
+      "Rune sq shield": "https://oldschool.runescape.wiki/images/Rune_sq_shield.png",
+      "Green d'hide vambraces": "https://oldschool.runescape.wiki/images/Green_d%27hide_vambraces.png",
+      "Steel sq shield": "https://oldschool.runescape.wiki/images/Steel_sq_shield.png",
+      "Gold necklace": "https://oldschool.runescape.wiki/images/Gold_necklace.png"
+    };
+    
+    function toggleAvgColumns() {
+      avgColumnsVisible = !avgColumnsVisible;
+      const avgColumns = document.querySelectorAll('.avg-column');
+      const button = document.querySelector('.toggle-btn');
+      
+      avgColumns.forEach(col => {
+        if (avgColumnsVisible) {
+          col.classList.remove('hidden');
+        } else {
+          col.classList.add('hidden');
+        }
+      });
+      
+      button.textContent = avgColumnsVisible ? 'Hide 6h Average Columns' : 'Show 6h Average Columns';
+    }
+    
+    async function loadAlchemyData() {
+      // Fetch mapping (items info)
+      const mapRes = await fetch("https://prices.runescape.wiki/api/v1/osrs/mapping");
+      const mapping = await mapRes.json();
+      // Fetch prices
+      const priceRes = await fetch("https://prices.runescape.wiki/api/v1/osrs/latest");
+      const prices = await priceRes.json();
+      
+      const profitableItems = [];
+      
+      mapping.forEach(item => {
+        // skip members items
+        if (item.members) return;
+        const gePrice = prices.data[item.id]?.high;
+        if (!gePrice || !item.highalch) return; // skip items without prices/alch
+        const alchReturn = item.highalch;
+        const profit = alchReturn - (gePrice + natureRuneCost);
+        const geLimit = item.limit;
+        if (geLimit < 10) return;
+        
+        if (profit < 100) return; // Changed from profit > 0 to profit < 100
+        
+        profitableItems.push({
+          id: item.id,
+          name: item.name,
+          gePrice,
+          avgPrice: null, // Will be updated later
+          alchReturn,
+          geLimit,
+          profit,
+          totalProfit: profit * geLimit, // Calculate total profit
+          volume: null, // Will be updated later
+          avgProfit: null, // Will be calculated later
+          totalAvgProfit: null // Will be calculated later
+        });
+      });
+      
+      // sort by profit descending
+      profitableItems.sort((a, b) => b.profit - a.profit);
+      
+      // Render table immediately with placeholder for avg price
+      renderTable(profitableItems);
+      
+      // Fetch 6h averages asynchronously and update table
+      fetchAveragePrices(profitableItems);
+    }
+    
+    function renderTable(items) {
+      const tbody = document.querySelector("#alchemyTable tbody");
+      tbody.innerHTML = "";
+      items.forEach((item, index) => {
+        const row = document.createElement("tr");
+        row.id = `row-${index}`;
+        
+        // Create item cell with image
+        const itemCell = document.createElement("td");
+        const itemDiv = document.createElement("div");
+        itemDiv.className = "item-cell";
+        
+        // Add image if available
+        if (itemImages[item.name]) {
+          const img = document.createElement("img");
+          img.src = itemImages[item.name];
+          img.className = "item-icon";
+          img.alt = item.name;
+          img.onerror = function() { this.style.display = 'none'; };
+          itemDiv.appendChild(img);
+        }
+        
+        // Add item name
+        const span = document.createElement("span");
+        span.textContent = item.name;
+        itemDiv.appendChild(span);
+        
+        itemCell.appendChild(itemDiv);
+        row.appendChild(itemCell);
+        
+        // Add other cells
+        row.innerHTML += `
+          <td>${item.gePrice.toLocaleString()}</td>
+          <td id="avg-${index}" class="avg-column">Loading...</td>
+          <td>${natureRuneCost}</td>
+          <td>${item.alchReturn.toLocaleString()}</td>
+          <td>${item.geLimit.toLocaleString()}</td>
+          <td id="volume-${index}">Loading...</td>
+          <td class="profit">${item.profit.toLocaleString()}</td>
+          <td class="total-profit">${item.totalProfit.toLocaleString()}</td>
+          <td id="avgprofit-${index}" class="profit avg-column">Loading...</td>
+          <td id="totalavgprofit-${index}" class="total-profit avg-column">Loading...</td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+    
+    async function fetchAveragePrices(items) {
+      // Function to get 6h average price for an item
+      async function get6hAverage(itemId) {
+        try {
+          const timeRes = await fetch(`https://prices.runescape.wiki/api/v1/osrs/timeseries?timestep=5m&id=${itemId}`);
+          const timeData = await timeRes.json();
+          
+          if (!timeData.data || timeData.data.length === 0) return { avgPrice: null, volume: null };
+          
+          // Get data from the last 6 hours (72 data points at 5-minute intervals)
+          const recent = timeData.data.slice(-72);
+          const validPrices = recent.filter(point => point.avgHighPrice !== null && point.avgHighPrice !== undefined);
+          
+          if (validPrices.length === 0) return { avgPrice: null, volume: null };
+          
+          // Calculate average price
+          const sum = validPrices.reduce((total, point) => total + point.avgHighPrice, 0);
+          const avgPrice = Math.round(sum / validPrices.length);
+          
+          // Calculate total volume (buy + sell)
+          let totalBuyVolume = 0;
+          let totalSellVolume = 0;
+          
+          recent.forEach(point => {
+            if (point.highPriceVolume) totalBuyVolume += point.highPriceVolume;
+            if (point.lowPriceVolume) totalSellVolume += point.lowPriceVolume;
+          });
+          
+          const volume = {
+            buy: totalBuyVolume,
+            sell: totalSellVolume
+          };
+          
+          return { avgPrice, volume };
+        } catch (error) {
+          console.error(`Error fetching 6h average for item ${itemId}:`, error);
+          return { avgPrice: null, volume: null };
+        }
+      }
+      
+      // Update each item's average price and volume
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const { avgPrice, volume } = await get6hAverage(item.id);
+        
+        // Update the average price cell
+        const avgCell = document.getElementById(`avg-${i}`);
+        if (avgCell) {
+          avgCell.textContent = avgPrice ? avgPrice.toLocaleString() : 'N/A';
+        }
+        
+        // Update the volume cell
+        const volumeCell = document.getElementById(`volume-${i}`);
+        if (volumeCell && volume) {
+          volumeCell.textContent = `${volume.buy.toLocaleString()}/${volume.sell.toLocaleString()}`;
+        } else if (volumeCell) {
+          volumeCell.textContent = 'N/A';
+        }
+        
+        // Calculate and update 6h average profit
+        const avgProfitCell = document.getElementById(`avgprofit-${i}`);
+        let avgProfit = null;
+        if (avgProfitCell && avgPrice) {
+          avgProfit = item.alchReturn - (avgPrice + natureRuneCost);
+          avgProfitCell.textContent = avgProfit.toLocaleString();
+        } else if (avgProfitCell) {
+          avgProfitCell.textContent = 'N/A';
+        }
+        
+        // Calculate and update total 6h average profit
+        const totalAvgProfitCell = document.getElementById(`totalavgprofit-${i}`);
+        if (totalAvgProfitCell && avgProfit !== null) {
+          const totalAvgProfit = avgProfit * item.geLimit;
+          totalAvgProfitCell.textContent = totalAvgProfit.toLocaleString();
+        } else if (totalAvgProfitCell) {
+          totalAvgProfitCell.textContent = 'N/A';
+        }
+        
+        // Small delay to avoid hitting API too hard
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+    loadAlchemyData();
+  </script>
+</body>
+</html>
