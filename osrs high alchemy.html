@@ -266,7 +266,8 @@
         if (!gePrice || !item.highalch) return; // skip items without prices/alch
         const alchReturn = item.highalch;
         const profit = alchReturn - (gePrice + natureRuneCost);
-        const geLimit = item.limit;
+		
+        const geLimit = item.limit != null ? item.limit : 0;
         if (geLimit < 10) return;
         
         if (profit < 100) return; // Changed from profit > 0 to profit < 100
@@ -287,7 +288,9 @@
       });
       
       // sort by profit descending
-      profitableItems.sort((a, b) => b.profit - a.profit);
+      //profitableItems.sort((a, b) => b.profit - a.profit);
+      profitableItems.sort((a, b) => b.totalProfit - a.totalProfit);
+      //profitableItems.sort((a, b) => b.totalAvgProfit - a.totalAvgProfit);
       
       // Render table immediately with placeholder for avg price
       renderTable(profitableItems);
