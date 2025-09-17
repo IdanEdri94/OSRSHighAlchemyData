@@ -64,6 +64,28 @@
       color: #ffd700;
       font-weight: bold;
       text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+      cursor: pointer;
+      user-select: none;
+      position: relative;
+    }
+    
+    th:hover {
+      background: linear-gradient(135deg, #8b4513 0%, #a0522d 50%, #8b4513 100%);
+    }
+    
+    th.sortable::after {
+      content: ' ⇅';
+      opacity: 0.5;
+    }
+    
+    th.sort-asc::after {
+      content: ' ▲';
+      opacity: 1;
+    }
+    
+    th.sort-desc::after {
+      content: ' ▼';
+      opacity: 1;
     }
     
     td {
@@ -112,32 +134,120 @@
       transition: opacity 0.3s ease;
     }
     
+    .ge-column {
+      transition: opacity 0.3s ease;
+    }
+    
     .hidden {
       display: none;
+    }
+    
+    .price-highlight {
+      background: rgba(255, 215, 0, 0.3) !important;
+      color: #ffd700 !important;
+      font-weight: bold;
+    }
+    
+    .low-volume {
+      color: #ff4444 !important;
+      font-weight: bold;
+    }
+    
+    .loading-indicator {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(139, 69, 19, 0.9);
+      color: #ffd700;
+      padding: 15px 20px;
+      border-radius: 8px;
+      border: 2px solid #8b4513;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: bold;
+      z-index: 1000;
+    }
+    
+    .loading-spinner {
+      width: 20px;
+      height: 20px;
+      border: 2px solid #654321;
+      border-top: 2px solid #ffd700;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .loading-indicator.hidden {
+      display: none;
+    }
+    
+    .checkbox-cell {
+      text-align: center;
+      padding: 8px;
+    }
+    
+    .item-checkbox {
+      cursor: pointer;
+      transform: scale(1.2);
+    }
+    
+    .item-checkbox:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .bought-item {
+      background: rgba(50, 205, 50, 0.1) !important;
+    }
+    
+    .recently-bought {
+      background: rgba(255, 165, 0, 0.1) !important;
     }
   </style>
 </head>
 <body>
   <h2>F2P Profitable High Alchemy Tracker (Live Data)</h2>
   
+  <div id="loadingIndicator" class="loading-indicator">
+    <div class="loading-spinner"></div>
+    <span>Loading data...</span>
+  </div>
+  
   <div class="controls">
     <button class="toggle-btn" onclick="toggleAvgColumns()">Hide 6h Average Columns</button>
+    <button class="toggle-btn" onclick="toggleGePriceColumns()">Hide GE Price Columns</button>
+    <button class="toggle-btn" onclick="refreshData()">Refresh Data</button>
+    <button class="toggle-btn" onclick="document.getElementById('fileInput').click()">Load Purchase Data</button>
+    <button class="toggle-btn" onclick="clearManualCheckboxes()">Clear Manual Checkboxes</button>
+    <input type="file" id="fileInput" accept=".json" style="display: none;" onchange="handleFileSelect(event)">
   </div>
   
   <table id="alchemyTable">
     <thead>
       <tr>
-        <th>Item</th>
-        <th>GE Price</th>
-        <th class="avg-column">6h Avg Price</th>
-        <th>Nature Rune Cost</th>
-        <th>High Alch Return</th>
-        <th>GE Limit</th>
-        <th>Volume (Buy/Sell)</th>
-        <th>Profit</th>
-        <th>Total Profit (Current)</th>
-        <th class="avg-column">6h Avg Profit</th>
-        <th class="avg-column">Total Profit (6h Avg)</th>
+        <th>✓</th>
+        <th data-column="name">Item</th>
+        <th data-column="gePrice" class="sortable ge-column">GE Price</th>
+        <th data-column="avgPrice" class="avg-column sortable">6h Avg Price</th>
+        <th data-column="cheapestPrice" class="sortable">Cheapest Price</th>
+        <th data-column="investment" class="sortable">Investment</th>
+        <th>NR Cost</th>
+        <th data-column="alchReturn" class="sortable">High Alch Return</th>
+        <th data-column="geLimit" class="sortable">GE Limit</th>
+        <th data-column="volume">Volume (Buy/Sell)</th>
+        <th data-column="profit" class="sortable ge-column">Profit (GE)</th>
+        <th data-column="totalProfit" class="sortable ge-column">Total Profit (GE)</th>
+        <th data-column="cheapestProfit" class="sortable">Profit (Cheapest)</th>
+        <th data-column="totalCheapestProfit" class="sortable">Total Profit (Cheapest)</th>
+        <th data-column="avgProfit" class="avg-column sortable">6h Avg Profit</th>
+        <th data-column="totalAvgProfit" class="avg-column sortable">Total Profit (6h Avg)</th>
       </tr>
     </thead>
     <tbody></tbody>
@@ -145,6 +255,109 @@
   <script>
     const natureRuneCost = 100; // adjust to current nature rune price
     let avgColumnsVisible = true;
+    let gePriceColumnsVisible = true;
+    let currentSort = { column: 'totalCheapestProfit', direction: 'desc' };
+    let itemsData = [];
+    let purchaseData = {}; // Store purchase timestamps by itemId (from JSON file)
+    let manualCheckboxes = {}; // Store manual checkbox states (user clicks)
+    let isLoading6hData = false; // Track if 6h data is currently loading
+    
+    // Load purchase data from JSON file
+    async function loadPurchaseData() {
+      try {
+        const response = await fetch('grand-exchange.json');
+        if (response.ok) {
+          const purchaseArray = await response.json();
+          processPurchaseData(purchaseArray);
+        }
+      } catch (error) {
+        // CORS error when running locally - file access blocked
+        console.log('Cannot load purchase data file automatically (CORS restriction). Use "Load Purchase Data" button instead.');
+        purchaseData = {};
+      }
+    }
+    
+    // Process purchase data array into our format
+    function processPurchaseData(purchaseArray) {
+      purchaseData = {};
+      purchaseArray.forEach(purchase => {
+        if (purchase.buy && purchase.itemId && purchase.time) {
+          // Keep only the most recent purchase time for each item
+          if (!purchaseData[purchase.itemId] || purchase.time > purchaseData[purchase.itemId]) {
+            purchaseData[purchase.itemId] = purchase.time;
+          }
+        }
+      });
+      
+      // Re-render table to update checkboxes and highlights
+      if (itemsData.length > 0) {
+        renderTableOnly(itemsData);
+        applyColumnVisibility();
+      }
+    }
+    
+    // Handle manual file selection
+    function handleFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      
+      if (file.type !== 'application/json' && !file.name.endsWith('.json')) {
+        alert('Please select a JSON file');
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const purchaseArray = JSON.parse(e.target.result);
+          processPurchaseData(purchaseArray);
+          console.log(`Loaded ${Object.keys(purchaseData).length} items from purchase data`);
+        } catch (error) {
+          alert('Error parsing JSON file: ' + error.message);
+        }
+      };
+      reader.readAsText(file);
+    }
+    
+    // Check if item was bought recently (within 4 hours)
+    function wasRecentlyBought(itemId) {
+      if (!purchaseData[itemId]) return false;
+      const purchaseTime = new Date(purchaseData[itemId]);
+      const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000);
+      return purchaseTime > fourHoursAgo;
+    }
+    
+    // Handle checkbox changes
+    function handleCheckboxChange(itemId, checkbox) {
+      if (checkbox.checked) {
+        manualCheckboxes[itemId] = true;
+        checkbox.parentElement.parentElement.classList.add('bought-item');
+      } else {
+        delete manualCheckboxes[itemId];
+        checkbox.parentElement.parentElement.classList.remove('bought-item');
+      }
+    }
+    
+    // Clear all manual checkboxes (but keep JSON file data)
+    function clearManualCheckboxes() {
+      manualCheckboxes = {};
+      // Re-render table to update checkboxes
+      if (itemsData.length > 0) {
+        renderTableOnly(itemsData);
+        applyColumnVisibility();
+      }
+    }
+    
+    function showLoading(message = 'Loading data...') {
+      const indicator = document.getElementById('loadingIndicator');
+      indicator.querySelector('span').textContent = message;
+      indicator.classList.remove('hidden');
+    }
+    
+    function hideLoading() {
+      const indicator = document.getElementById('loadingIndicator');
+      indicator.classList.add('hidden');
+    }
     
     // Item image mapping
     const itemImages = {
@@ -233,10 +446,10 @@
       "Gold necklace": "https://oldschool.runescape.wiki/images/Gold_necklace.png"
     };
     
-    function toggleAvgColumns() {
-      avgColumnsVisible = !avgColumnsVisible;
+    function applyColumnVisibility() {
+      // Apply visibility to header columns
       const avgColumns = document.querySelectorAll('.avg-column');
-      const button = document.querySelector('.toggle-btn');
+      const geColumns = document.querySelectorAll('.ge-column');
       
       avgColumns.forEach(col => {
         if (avgColumnsVisible) {
@@ -246,10 +459,155 @@
         }
       });
       
+      geColumns.forEach(col => {
+        if (gePriceColumnsVisible) {
+          col.classList.remove('hidden');
+        } else {
+          col.classList.add('hidden');
+        }
+      });
+    }
+    
+    function toggleAvgColumns() {
+      avgColumnsVisible = !avgColumnsVisible;
+      const button = document.querySelector('.toggle-btn');
+      
+      applyColumnVisibility();
+      
       button.textContent = avgColumnsVisible ? 'Hide 6h Average Columns' : 'Show 6h Average Columns';
     }
     
-    async function loadAlchemyData() {
+    function toggleGePriceColumns() {
+      gePriceColumnsVisible = !gePriceColumnsVisible;
+      const button = document.querySelector('button[onclick="toggleGePriceColumns()"]');
+      
+      applyColumnVisibility();
+      
+      button.textContent = gePriceColumnsVisible ? 'Hide GE Price Columns' : 'Show GE Price Columns';
+    }
+    
+    function sortData(column, direction) {
+      itemsData.sort((a, b) => {
+        let aVal = a[column];
+        let bVal = b[column];
+        
+        // Handle null/undefined values
+        if (aVal == null && bVal == null) return 0;
+        if (aVal == null) return 1;
+        if (bVal == null) return -1;
+        
+        // Handle string comparison for item names
+        if (column === 'name') {
+          return direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+        }
+        
+        // Handle volume sorting (sort by sell volume)
+        if (column === 'volume') {
+          const aSell = a.volumeData ? a.volumeData.sell : 0;
+          const bSell = b.volumeData ? b.volumeData.sell : 0;
+          return direction === 'asc' ? aSell - bSell : bSell - aSell;
+        }
+        
+        // Numeric comparison
+        return direction === 'asc' ? aVal - bVal : bVal - aVal;
+      });
+      
+      // Only re-render the table, don't refresh data
+      renderTableOnly(itemsData);
+      // Ensure header visibility matches current state
+      applyColumnVisibility();
+    }
+    
+    async function refreshData() {
+      // Don't allow refresh while 6h data is loading
+      if (isLoading6hData) {
+        return;
+      }
+      
+      // Show loading indicator for refresh
+      showLoading('Refreshing GE prices...');
+      
+      // Show loading indicator on refresh button
+      const refreshBtn = document.querySelector('button[onclick="refreshData()"]');
+      const originalText = refreshBtn.textContent;
+      refreshBtn.textContent = 'Refreshing...';
+      refreshBtn.disabled = true;
+      
+      try {
+        // Fetch only current GE prices
+        const priceRes = await fetch("https://prices.runescape.wiki/api/v1/osrs/latest");
+        const prices = await priceRes.json();
+        
+        // Update existing items with new GE prices and recalculate related values
+        itemsData.forEach(item => {
+          const newGePrice = prices.data[item.id]?.high;
+          if (newGePrice) {
+            // Update GE price
+            item.gePrice = newGePrice;
+            
+            // Recalculate GE-based profit
+            item.profit = item.alchReturn - (newGePrice + natureRuneCost);
+            item.totalProfit = item.profit * item.geLimit;
+            
+            // Recalculate cheapest price, investment and related profits
+            if (item.avgPrice !== null) {
+              item.cheapestPrice = Math.min(newGePrice, item.avgPrice);
+            } else {
+              item.cheapestPrice = newGePrice;
+            }
+            item.investment = item.cheapestPrice * item.geLimit;
+            item.cheapestProfit = item.alchReturn - (item.cheapestPrice + natureRuneCost);
+            item.totalCheapestProfit = item.cheapestProfit * item.geLimit;
+          }
+        });
+        
+        // Re-render table with current sort order maintained
+        renderTableOnly(itemsData);
+        applyColumnVisibility();
+        
+      } catch (error) {
+        console.error('Error refreshing GE prices:', error);
+      } finally {
+        hideLoading();
+        refreshBtn.textContent = originalText;
+        refreshBtn.disabled = false;
+      }
+    }
+    
+    function setupSorting() {
+      const headers = document.querySelectorAll('th[data-column]');
+      headers.forEach(header => {
+        header.addEventListener('click', () => {
+          const column = header.dataset.column;
+          let direction = 'desc';
+          
+          // Update sort indicators
+          document.querySelectorAll('th').forEach(h => {
+            h.classList.remove('sort-asc', 'sort-desc');
+          });
+          
+          if (currentSort.column === column) {
+            direction = currentSort.direction === 'desc' ? 'asc' : 'desc';
+          }
+          
+          currentSort = { column, direction };
+          header.classList.add(direction === 'asc' ? 'sort-asc' : 'sort-desc');
+          
+          sortData(column, direction);
+        });
+      });
+    }
+    
+    async function loadAlchemyData(isInitialLoad = false) {
+      if (isInitialLoad) {
+        showLoading('Loading item data...');
+        // Load purchase data on startup
+        await loadPurchaseData();
+      } else {
+        // Load purchase data on refresh too
+        await loadPurchaseData();
+      }
+      
       // Fetch mapping (items info)
       const mapRes = await fetch("https://prices.runescape.wiki/api/v1/osrs/mapping");
       const mapping = await mapRes.json();
@@ -270,41 +628,154 @@
         const geLimit = item.limit != null ? item.limit : 0;
         if (geLimit < 10) return;
         
-        if (profit < 100) return; // Changed from profit > 0 to profit < 100
+        // Removed the profit filter - now includes all items regardless of profit
         
-        profitableItems.push({
-          id: item.id,
-          name: item.name,
-          gePrice,
-          avgPrice: null, // Will be updated later
-          alchReturn,
-          geLimit,
-          profit,
-          totalProfit: profit * geLimit, // Calculate total profit
-          volume: null, // Will be updated later
-          avgProfit: null, // Will be calculated later
-          totalAvgProfit: null // Will be calculated later
-        });
+        // Calculate cheapest price profit
+        const cheapestProfit = alchReturn - (gePrice + natureRuneCost); // Initially same as GE profit
+        const totalCheapestProfit = cheapestProfit * geLimit;
+        
+        // Check if item already exists in itemsData (for refresh functionality)
+        const existingItemIndex = itemsData.findIndex(existingItem => existingItem.id === item.id);
+        
+        if (existingItemIndex !== -1) {
+          // Update existing item with new prices
+          const existingItem = itemsData[existingItemIndex];
+          existingItem.gePrice = gePrice;
+          existingItem.profit = profit;
+          existingItem.totalProfit = profit * geLimit;
+          existingItem.cheapestPrice = existingItem.avgPrice !== null ? Math.min(gePrice, existingItem.avgPrice) : gePrice;
+          // Recalculate cheapest profit
+          existingItem.cheapestProfit = existingItem.alchReturn - (existingItem.cheapestPrice + natureRuneCost);
+          existingItem.totalCheapestProfit = existingItem.cheapestProfit * geLimit;
+        } else {
+          // Add new item
+          profitableItems.push({
+            id: item.id,
+            name: item.name,
+            gePrice,
+            avgPrice: null, // Will be updated later
+            cheapestPrice: gePrice, // Initially same as GE price
+            investment: gePrice * geLimit, // Calculate investment amount
+            alchReturn,
+            geLimit,
+            profit,
+            totalProfit: profit * geLimit, // Calculate total profit
+            cheapestProfit, // Profit using cheapest price
+            totalCheapestProfit, // Total profit using cheapest price
+            volume: null, // Will be updated later
+            volumeData: null, // Store actual volume data for sorting
+            avgProfit: null, // Will be calculated later
+            totalAvgProfit: null // Will be calculated later
+          });
+        }
       });
       
-      // sort by profit descending
-      //profitableItems.sort((a, b) => b.profit - a.profit);
-      profitableItems.sort((a, b) => b.totalProfit - a.totalProfit);
-      //profitableItems.sort((a, b) => b.totalAvgProfit - a.totalAvgProfit);
+      // On initial load, replace itemsData. On refresh, append new items
+      if (isInitialLoad) {
+        itemsData = profitableItems;
+      } else {
+        itemsData = itemsData.concat(profitableItems);
+      }
       
-      // Render table immediately with placeholder for avg price
-      renderTable(profitableItems);
+      // Apply current sort if one exists
+      if (currentSort.column) {
+        sortData(currentSort.column, currentSort.direction);
+      } else {
+        // Initial sort by total cheapest profit descending
+        sortData('totalCheapestProfit', 'desc');
+      }
       
-      // Fetch 6h averages asynchronously and update table
-      fetchAveragePrices(profitableItems);
+      // Setup sorting after rendering (only on first load)
+      if (isInitialLoad) {
+        setupSorting();
+        
+        // Set initial sort indicator
+        currentSort = { column: 'totalCheapestProfit', direction: 'desc' };
+        document.querySelector('th[data-column="totalCheapestProfit"]').classList.add('sort-desc');
+        
+        // Auto-hide GE and 6h average columns on first load
+        setTimeout(() => {
+          if (gePriceColumnsVisible) toggleGePriceColumns();
+          if (avgColumnsVisible) toggleAvgColumns();
+        }, 100);
+      } else {
+        // For refresh, just re-render and apply visibility
+        renderTableOnly(itemsData);
+        applyColumnVisibility();
+      }
+      
+      // Fetch 6h averages for new items (or all items on initial load)
+      const itemsToFetch = isInitialLoad ? itemsData : profitableItems;
+      if (itemsToFetch.length > 0) {
+        if (isInitialLoad) {
+          showLoading('Loading 6h average prices...');
+        }
+        await fetchAveragePrices(itemsToFetch);
+        
+        // Update 6h-related calculations for ALL items after loading averages
+        itemsData.forEach(item => {
+          if (item.avgPrice !== null) {
+            // Recalculate cheapest price and investment
+            item.cheapestPrice = Math.min(item.gePrice, item.avgPrice);
+            item.investment = item.cheapestPrice * item.geLimit;
+            // Recalculate cheapest profits
+            item.cheapestProfit = item.alchReturn - (item.cheapestPrice + natureRuneCost);
+            item.totalCheapestProfit = item.cheapestProfit * item.geLimit;
+          }
+        });
+        
+        // Re-apply sort after getting new average data
+        if (currentSort.column) {
+          sortData(currentSort.column, currentSort.direction);
+        }
+      } else if (!isInitialLoad) {
+        // If no new items on refresh, just re-render with updated prices
+        renderTableOnly(itemsData);
+        applyColumnVisibility();
+      }
+      
+      if (isInitialLoad) {
+        hideLoading();
+      }
     }
     
-    function renderTable(items) {
+    function renderTableOnly(items) {
       const tbody = document.querySelector("#alchemyTable tbody");
       tbody.innerHTML = "";
       items.forEach((item, index) => {
         const row = document.createElement("tr");
         row.id = `row-${index}`;
+        
+        // Check purchase status
+        const isRecentlyBought = wasRecentlyBought(item.id);
+        const isManuallyChecked = manualCheckboxes[item.id];
+        
+        // Apply row styling based on purchase status
+        if (isRecentlyBought) {
+          row.classList.add('recently-bought');
+        } else if (isManuallyChecked) {
+          row.classList.add('bought-item');
+        }
+        
+        // Create checkbox cell
+        const checkboxCell = document.createElement("td");
+        checkboxCell.className = "checkbox-cell";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.className = "item-checkbox";
+        
+        // Set checkbox state and disabled status
+        if (isRecentlyBought) {
+          checkbox.checked = true;
+          checkbox.disabled = true;
+        } else {
+          checkbox.checked = isManuallyChecked || false;
+          checkbox.disabled = false;
+          checkbox.onchange = () => handleCheckboxChange(item.id, checkbox);
+        }
+        
+        checkboxCell.appendChild(checkbox);
+        row.appendChild(checkboxCell);
         
         // Create item cell with image
         const itemCell = document.createElement("td");
@@ -329,24 +800,65 @@
         itemCell.appendChild(itemDiv);
         row.appendChild(itemCell);
         
-        // Add other cells
-        row.innerHTML += `
-          <td>${item.gePrice.toLocaleString()}</td>
-          <td id="avg-${index}" class="avg-column">Loading...</td>
-          <td>${natureRuneCost}</td>
-          <td>${item.alchReturn.toLocaleString()}</td>
-          <td>${item.geLimit.toLocaleString()}</td>
-          <td id="volume-${index}">Loading...</td>
-          <td class="profit">${item.profit.toLocaleString()}</td>
-          <td class="total-profit">${item.totalProfit.toLocaleString()}</td>
-          <td id="avgprofit-${index}" class="profit avg-column">Loading...</td>
-          <td id="totalavgprofit-${index}" class="total-profit avg-column">Loading...</td>
-        `;
+        // Determine which price to highlight and create cells
+        const gePriceClass = (item.avgPrice !== null && item.gePrice < item.avgPrice) ? 'price-highlight' : '';
+        const avgPriceClass = (item.avgPrice !== null && item.avgPrice < item.gePrice) ? 'price-highlight' : '';
+        const avgPriceText = item.avgPrice !== null ? item.avgPrice.toLocaleString() : 'N/A';
+        
+        // Create volume cell with highlighting
+        let volumeText = 'N/A';
+        let volumeClass = '';
+        if (item.volumeData) {
+          volumeText = `${item.volumeData.buy.toLocaleString()}/${item.volumeData.sell.toLocaleString()}`;
+          volumeClass = item.volumeData.sell < 1000 ? 'low-volume' : '';
+        }
+        
+        // Determine visibility classes based on current toggle states
+        const geColumnClass = gePriceColumnsVisible ? 'ge-column' : 'ge-column hidden';
+        const avgColumnClass = avgColumnsVisible ? 'avg-column' : 'avg-column hidden';
+        
+        // Create and append remaining cells individually
+        const cells = [
+          { content: item.gePrice.toLocaleString(), className: `${geColumnClass} ${gePriceClass}` },
+          { content: avgPriceText, className: `${avgColumnClass} ${avgPriceClass}` },
+          { content: item.cheapestPrice.toLocaleString(), className: '' },
+          { content: item.investment.toLocaleString(), className: '' },
+          { content: natureRuneCost, className: '' },
+          { content: item.alchReturn.toLocaleString(), className: '' },
+          { content: item.geLimit.toLocaleString(), className: '' },
+          { content: volumeText, className: volumeClass },
+          { content: item.profit.toLocaleString(), className: `profit ${geColumnClass}` },
+          { content: item.totalProfit.toLocaleString(), className: `total-profit ${geColumnClass}` },
+          { content: item.cheapestProfit.toLocaleString(), className: 'profit' },
+          { content: item.totalCheapestProfit.toLocaleString(), className: 'total-profit' },
+          { content: item.avgProfit !== null ? item.avgProfit.toLocaleString() : 'N/A', className: `profit ${avgColumnClass}` },
+          { content: item.totalAvgProfit !== null ? item.totalAvgProfit.toLocaleString() : 'N/A', className: `total-profit ${avgColumnClass}` }
+        ];
+        
+        cells.forEach(cellData => {
+          const cell = document.createElement('td');
+          cell.textContent = cellData.content;
+          cell.className = cellData.className;
+          row.appendChild(cell);
+        });
+        
         tbody.appendChild(row);
       });
     }
     
+    function renderTable(items) {
+      renderTableOnly(items);
+    }
+    
     async function fetchAveragePrices(items) {
+      isLoading6hData = true;
+      
+      // Disable refresh button while loading 6h data
+      const refreshBtn = document.querySelector('button[onclick="refreshData()"]');
+      const originalRefreshText = refreshBtn.textContent;
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = 'Loading 6h data...';
+      
       // Function to get 6h average price for an item
       async function get6hAverage(itemId) {
         try {
@@ -391,44 +903,36 @@
         const item = items[i];
         const { avgPrice, volume } = await get6hAverage(item.id);
         
-        // Update the average price cell
-        const avgCell = document.getElementById(`avg-${i}`);
-        if (avgCell) {
-          avgCell.textContent = avgPrice ? avgPrice.toLocaleString() : 'N/A';
-        }
+        // Update item data
+        item.avgPrice = avgPrice;
+        item.volumeData = volume;
         
-        // Update the volume cell
-        const volumeCell = document.getElementById(`volume-${i}`);
-        if (volumeCell && volume) {
-          volumeCell.textContent = `${volume.buy.toLocaleString()}/${volume.sell.toLocaleString()}`;
-        } else if (volumeCell) {
-          volumeCell.textContent = 'N/A';
+        // Calculate and update cheapest price and profits
+        if (avgPrice !== null) {
+          item.cheapestPrice = Math.min(item.gePrice, avgPrice);
+          item.investment = item.cheapestPrice * item.geLimit;
+          item.cheapestProfit = item.alchReturn - (item.cheapestPrice + natureRuneCost);
+          item.totalCheapestProfit = item.cheapestProfit * item.geLimit;
         }
         
         // Calculate and update 6h average profit
-        const avgProfitCell = document.getElementById(`avgprofit-${i}`);
         let avgProfit = null;
-        if (avgProfitCell && avgPrice) {
+        if (avgPrice) {
           avgProfit = item.alchReturn - (avgPrice + natureRuneCost);
-          avgProfitCell.textContent = avgProfit.toLocaleString();
-        } else if (avgProfitCell) {
-          avgProfitCell.textContent = 'N/A';
-        }
-        
-        // Calculate and update total 6h average profit
-        const totalAvgProfitCell = document.getElementById(`totalavgprofit-${i}`);
-        if (totalAvgProfitCell && avgProfit !== null) {
-          const totalAvgProfit = avgProfit * item.geLimit;
-          totalAvgProfitCell.textContent = totalAvgProfit.toLocaleString();
-        } else if (totalAvgProfitCell) {
-          totalAvgProfitCell.textContent = 'N/A';
+          item.avgProfit = avgProfit;
+          item.totalAvgProfit = avgProfit * item.geLimit;
         }
         
         // Small delay to avoid hitting API too hard
         await new Promise(resolve => setTimeout(resolve, 100));
       }
+      
+      // Re-enable refresh button after 6h data loading is complete
+      isLoading6hData = false;
+      refreshBtn.disabled = false;
+      refreshBtn.textContent = originalRefreshText;
     }
-    loadAlchemyData();
+    loadAlchemyData(true);
   </script>
 </body>
 </html>
